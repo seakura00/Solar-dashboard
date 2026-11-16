@@ -452,7 +452,7 @@
       renderHistoryCharts(sortedEntries);
     });
 
-    // Export Complete Firebase History Archive to CSV
+   // Export Clean Firebase History Archive to CSV (No Push-ID Column)
     async function downloadHistoryCSV() {
       const btn = document.getElementById("downloadCsvBtn");
       const originalText = btn.innerHTML;
@@ -468,19 +468,18 @@
         }
 
         const sortedKeys = Object.keys(raw).sort();
-        const csvLines = ["Timestamp,Time,Solar_Power_W,Battery_V,Soil_Moisture_Pct,Pump_State,Energy_Wh"];
+        const csvLines = ["Time,Solar_Power_W,Battery_V,Soil_Moisture_Pct,Pump_State,Energy_Wh"];
 
         for (const key of sortedKeys) {
           const row = raw[key];
           if (!row) continue;
-          const fullTs = row.full_ts || key.replace("_", " ");
-          const time   = row.time || "";
+          const time   = row.full_ts || row.time || "";
           const solarW = Number(row.solar_power ?? 0).toFixed(2);
           const battV  = Number(row.battery_voltage ?? 0).toFixed(2);
           const moist  = Number(row.soil_moisture ?? 0);
           const pump   = row.pump_state || "OFF";
           const energy = Number(row.energy_wh ?? 0).toFixed(4);
-          csvLines.push(`${fullTs},${time},${solarW},${battV},${moist},${pump},${energy}`);
+          csvLines.push(`${time},${solarW},${battV},${moist},${pump},${energy}`);
         }
 
         const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
