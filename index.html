@@ -37,23 +37,47 @@
       border-bottom: 1px solid var(--border);
     }
     header h1 { font-size: 1.45rem; font-weight: 700; }
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
     .status-pill {
       display: inline-flex;
       align-items: center;
       gap: 8px;
       background: var(--card);
       border: 1px solid var(--border);
-      padding: 6px 14px;
+      padding: 7px 14px;
       border-radius: 999px;
       font-size: 0.85rem;
       color: var(--muted);
     }
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent);
+      color: #0f172a;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s ease, transform 0.1s ease;
+    }
+    .btn-download:hover { opacity: 0.9; }
+    .btn-download:active { transform: scale(0.98); }
+    .btn-download:disabled { opacity: 0.6; cursor: wait; }
     .dot {
       width: 9px;
       height: 9px;
       border-radius: 50%;
       background: var(--green);
       box-shadow: 0 0 8px var(--green);
+      transition: background 0.3s ease, box-shadow 0.3s ease;
     }
     .kpi-grid {
       display: grid;
@@ -123,9 +147,14 @@
         <h1>🌱 Off-Grid Solar Smart Irrigation</h1>
         <p style="color: var(--muted); font-size: 0.9rem;">Live ESP32 Telemetry &amp; Automated Moisture Control</p>
       </div>
-      <div class="status-pill">
-        <span class="dot" id="liveDot"></span>
-        <span>Last Sync: <strong id="lastUpdated" style="color: var(--text);">--</strong></span>
+      <div class="header-actions">
+        <div class="status-pill">
+          <span class="dot" id="liveDot"></span>
+          <span>Last Sync: <strong id="lastUpdated" style="color: var(--text);">--</strong></span>
+        </div>
+        <button class="btn-download" id="downloadCsvBtn" onclick="downloadHistoryCSV()">
+          📥 Download CSV
+        </button>
       </div>
     </header>
 
@@ -197,14 +226,13 @@
 
   <script>
     const FIREBASE_BASE = "https://solar-irrigation-system-f95ea-default-rtdb.asia-southeast1.firebasedatabase.app";
-    const HISTORY_LIMIT = 40; // Latest 40 history points (~10 minutes of 15s intervals)
+    const HISTORY_LIMIT = 100; // Displays latest 100 points on live charts
 
     Chart.defaults.color = "#94a3b8";
     Chart.defaults.borderColor = "rgba(51, 65, 85, 0.6)";
 
     // 1. Soil Moisture (%) & Pump ON vs Time Chart
-    const moisturePumpCtx = document.getElementById("moisturePumpChart").getContext("2d");
-    const moisturePumpChart = new Chart(moisturePumpCtx, {
+    const moisturePumpChart = new Chart(document.getElementById("moisturePumpChart").getContext("2d"), {
       type: "line",
       data: {
         labels: [],
@@ -238,23 +266,19 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: { duration: 250 },
         interaction: { mode: "index", intersect: false },
         plugins: {
           tooltip: {
             callbacks: {
-              label: function(ctx) {
-                if (ctx.dataset.yAxisID === "y1") {
-                  return "Pump State: " + (ctx.parsed.y >= 1 ? "ON (Active)" : "OFF");
-                }
-                return "Soil Moisture: " + ctx.parsed.y + "%";
-              }
+              label: (ctx) => ctx.dataset.yAxisID === "y1"
+                ? "Pump State: " + (ctx.parsed.y >= 1 ? "ON (Active)" : "OFF")
+                : "Soil Moisture: " + ctx.parsed.y + "%"
             }
           }
         },
         scales: {
-          x: {
-            ticks: { maxTicksLimit: 10 }
-          },
+          x: { ticks: { maxTicksLimit: 10 } },
           y: {
             type: "linear",
             position: "left",
@@ -268,10 +292,7 @@
             min: 0,
             max: 1,
             grid: { drawOnChartArea: false },
-            ticks: {
-              stepSize: 1,
-              callback: (val) => (val === 1 ? "ON" : "OFF")
-            },
+            ticks: { stepSize: 1, callback: (val) => (val === 1 ? "ON" : "OFF") },
             title: { display: true, text: "Pump Status", color: "#38bdf8" }
           }
         }
@@ -279,8 +300,7 @@
     });
 
     // 2. Solar Power (W) & Battery Voltage (V) Chart
-    const powerBattCtx = document.getElementById("powerBattChart").getContext("2d");
-    const powerBattChart = new Chart(powerBattCtx, {
+    const powerBattChart = new Chart(document.getElementById("powerBattChart").getContext("2d"), {
       type: "line",
       data: {
         labels: [],
@@ -311,30 +331,18 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: { duration: 250 },
         interaction: { mode: "index", intersect: false },
         scales: {
           x: { ticks: { maxTicksLimit: 8 } },
-          y: {
-            type: "linear",
-            position: "left",
-            min: 0,
-            title: { display: true, text: "Solar (W)", color: "#f59e0b" }
-          },
-          y1: {
-            type: "linear",
-            position: "right",
-            min: 3.0,
-            max: 4.3,
-            grid: { drawOnChartArea: false },
-            title: { display: true, text: "Battery (V)", color: "#38bdf8" }
-          }
+          y: { type: "linear", position: "left", min: 0, title: { display: true, text: "Solar (W)", color: "#f59e0b" } },
+          y1: { type: "linear", position: "right", min: 3.0, max: 4.3, grid: { drawOnChartArea: false }, title: { display: true, text: "Battery (V)", color: "#38bdf8" } }
         }
       }
     });
 
     // 3. Cumulative Energy Consumption (Wh) Chart
-    const energyCtx = document.getElementById("energyChart").getContext("2d");
-    const energyChart = new Chart(energyCtx, {
+    const energyChart = new Chart(document.getElementById("energyChart").getContext("2d"), {
       type: "line",
       data: {
         labels: [],
@@ -354,80 +362,158 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: { duration: 250 },
         scales: {
           x: { ticks: { maxTicksLimit: 8 } },
-          y: {
-            min: 0,
-            title: { display: true, text: "Energy (Wh)", color: "#a78bfa" }
-          }
+          y: { min: 0, title: { display: true, text: "Energy (Wh)", color: "#a78bfa" } }
         }
       }
     });
 
-    // Fetch Live Telemetry (/telemetry.json)
-    async function fetchTelemetry() {
-      try {
-        const res = await fetch(`${FIREBASE_BASE}/telemetry.json`);
-        const data = await res.json();
-        if (!data) return;
+    // Live UI & Heartbeat State
+    let latestTelemetry = {};
+    let lastPacketTime = Date.now();
 
-        document.getElementById("lastUpdated").textContent = data.timestamp || "--";
-        document.getElementById("solarPower").textContent = `${Number(data.solar_power_w || 0).toFixed(2)} W`;
-        document.getElementById("solarVoltage").textContent = `${Number(data.solar_voltage || 0).toFixed(2)} V`;
-        document.getElementById("batteryPct").textContent = `${data.battery_pct ?? "--"} %`;
-        document.getElementById("batteryVoltage").textContent = `${Number(data.battery_voltage || 0).toFixed(2)} V`;
-        document.getElementById("soilMoisture").textContent = `${data.soil_moisture ?? "--"} %`;
-        document.getElementById("pumpPower").textContent = `${Number(data.pump_power_w || 0).toFixed(2)} W`;
-        document.getElementById("pumpCurrent").textContent = `${Number(data.pump_current_ma || 0).toFixed(0)} mA`;
-        document.getElementById("energyWh").textContent = `${Number(data.energy_consumption_wh || 0).toFixed(4)} Wh`;
+    function updateTelemetryUI(data) {
+      if (!data) return;
+      lastPacketTime = Date.now();
 
-        const badge = document.getElementById("pumpBadge");
-        const isOn = String(data.pump_state).toUpperCase() === "ON";
-        badge.textContent = isOn ? "ON (WATERING)" : "OFF (IDLE)";
-        badge.className = "badge " + (isOn ? "badge-on" : "badge-off");
-      } catch (err) {
-        console.error("Telemetry fetch error:", err);
-      }
+      const dot = document.getElementById("liveDot");
+      dot.style.background = "#10b981";
+      dot.style.boxShadow = "0 0 8px #10b981";
+
+      document.getElementById("lastUpdated").textContent = data.timestamp || "--";
+      document.getElementById("solarPower").textContent = `${Number(data.solar_power_w || 0).toFixed(2)} W`;
+      document.getElementById("solarVoltage").textContent = `${Number(data.solar_voltage || 0).toFixed(2)} V`;
+      document.getElementById("batteryPct").textContent = `${data.battery_pct ?? "--"} %`;
+      document.getElementById("batteryVoltage").textContent = `${Number(data.battery_voltage || 0).toFixed(2)} V`;
+      document.getElementById("soilMoisture").textContent = `${data.soil_moisture ?? "--"} %`;
+      document.getElementById("pumpPower").textContent = `${Number(data.pump_power_w || 0).toFixed(2)} W`;
+      document.getElementById("pumpCurrent").textContent = `${Number(data.pump_current_ma || 0).toFixed(0)} mA`;
+      document.getElementById("energyWh").textContent = `${Number(data.energy_consumption_wh || 0).toFixed(4)} Wh`;
+
+      const badge = document.getElementById("pumpBadge");
+      const isOn = String(data.pump_state).toUpperCase() === "ON";
+      badge.textContent = isOn ? "ON (WATERING)" : "OFF (IDLE)";
+      badge.className = "badge " + (isOn ? "badge-on" : "badge-off");
     }
 
-    // Fetch History Series (/history.json)
-    async function fetchHistory() {
+    function renderHistoryCharts(entries) {
+      const labels = entries.map(item => item.time || "");
+      moisturePumpChart.data.labels = labels;
+      moisturePumpChart.data.datasets[0].data = entries.map(item => Number(item.soil_moisture ?? 0));
+      moisturePumpChart.data.datasets[1].data = entries.map(item => (String(item.pump_state).toUpperCase() === "ON" ? 1 : 0));
+      moisturePumpChart.update("none");
+
+      powerBattChart.data.labels = labels;
+      powerBattChart.data.datasets[0].data = entries.map(item => Number(item.solar_power ?? 0));
+      powerBattChart.data.datasets[1].data = entries.map(item => Number(item.battery_voltage ?? 0));
+      powerBattChart.update("none");
+
+      energyChart.data.labels = labels;
+      energyChart.data.datasets[0].data = entries.map(item => Number(item.energy_wh ?? 0));
+      energyChart.update("none");
+    }
+
+    // Real-Time Stream 1: /telemetry.json
+    const telemetryStream = new EventSource(`${FIREBASE_BASE}/telemetry.json`);
+    telemetryStream.addEventListener("put", (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg && msg.data) {
+        latestTelemetry = msg.data;
+        updateTelemetryUI(latestTelemetry);
+      }
+    });
+    telemetryStream.addEventListener("patch", (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg && msg.data) {
+        latestTelemetry = { ...latestTelemetry, ...msg.data };
+        updateTelemetryUI(latestTelemetry);
+      }
+    });
+
+    // Real-Time Stream 2: /history.json (Chronologically Sorted Rolling Window)
+    let historyMap = {};
+    const historyStream = new EventSource(`${FIREBASE_BASE}/history.json?orderBy="$key"&limitToLast=${HISTORY_LIMIT}`);
+    historyStream.addEventListener("put", (e) => {
+      const msg = JSON.parse(e.data);
+      if (!msg || !msg.data) return;
+      if (msg.path === "/") {
+        historyMap = msg.data;
+      } else {
+        const key = msg.path.replace("/", "");
+        historyMap[key] = msg.data;
+        const keys = Object.keys(historyMap).sort();
+        while (keys.length > HISTORY_LIMIT) {
+          delete historyMap[keys.shift()];
+        }
+      }
+      const sortedEntries = Object.keys(historyMap).sort().map(k => historyMap[k]);
+      renderHistoryCharts(sortedEntries);
+    });
+
+    // Export Complete Firebase History Archive to CSV
+    async function downloadHistoryCSV() {
+      const btn = document.getElementById("downloadCsvBtn");
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = "⏳ Exporting...";
+
       try {
-        const res = await fetch(`${FIREBASE_BASE}/history.json?orderBy="$key"&limitToLast=${HISTORY_LIMIT}`);
+        const res = await fetch(`${FIREBASE_BASE}/history.json?orderBy="$key"`);
         const raw = await res.json();
-        if (!raw) return;
+        if (!raw) {
+          alert("No history records found in Firebase yet.");
+          return;
+        }
 
-        const entries = Object.values(raw);
-        const labels = entries.map(item => item.time || "");
-        const moistureSeries = entries.map(item => Number(item.soil_moisture ?? 0));
-        const pumpSeries = entries.map(item => (String(item.pump_state).toUpperCase() === "ON" ? 1 : 0));
-        const solarSeries = entries.map(item => Number(item.solar_power ?? 0));
-        const battSeries = entries.map(item => Number(item.battery_voltage ?? 0));
-        const energySeries = entries.map(item => Number(item.energy_wh ?? 0));
+        const sortedKeys = Object.keys(raw).sort();
+        const csvLines = ["Timestamp,Time,Solar_Power_W,Battery_V,Soil_Moisture_Pct,Pump_State,Energy_Wh"];
 
-        moisturePumpChart.data.labels = labels;
-        moisturePumpChart.data.datasets[0].data = moistureSeries;
-        moisturePumpChart.data.datasets[1].data = pumpSeries;
-        moisturePumpChart.update();
+        for (const key of sortedKeys) {
+          const row = raw[key];
+          if (!row) continue;
+          const fullTs = row.full_ts || key.replace("_", " ");
+          const time   = row.time || "";
+          const solarW = Number(row.solar_power ?? 0).toFixed(2);
+          const battV  = Number(row.battery_voltage ?? 0).toFixed(2);
+          const moist  = Number(row.soil_moisture ?? 0);
+          const pump   = row.pump_state || "OFF";
+          const energy = Number(row.energy_wh ?? 0).toFixed(4);
+          csvLines.push(`${fullTs},${time},${solarW},${battV},${moist},${pump},${energy}`);
+        }
 
-        powerBattChart.data.labels = labels;
-        powerBattChart.data.datasets[0].data = solarSeries;
-        powerBattChart.data.datasets[1].data = battSeries;
-        powerBattChart.update();
-
-        energyChart.data.labels = labels;
-        energyChart.data.datasets[0].data = energySeries;
-        energyChart.update();
+        const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const today = new Date().toISOString().slice(0, 10);
+        link.href = url;
+        link.setAttribute("download", `solar_irrigation_history_${today}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
       } catch (err) {
-        console.error("History fetch error:", err);
+        console.error("CSV export error:", err);
+        alert("Failed to export CSV. Check your internet connection and try again.");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
       }
     }
 
-    // Initial Load & Polling Loops
-    fetchTelemetry();
-    fetchHistory();
-    setInterval(fetchTelemetry, 5000);
-    setInterval(fetchHistory, 15000);
+    // Stale-Data Guard (Marks dot amber/red if ESP32 stops syncing > 15s)
+    setInterval(() => {
+      const ageSec = (Date.now() - lastPacketTime) / 1000;
+      const dot = document.getElementById("liveDot");
+      if (ageSec > 15) {
+        dot.style.background = "#ef4444";
+        dot.style.boxShadow = "0 0 8px #ef4444";
+      } else if (ageSec > 6) {
+        dot.style.background = "#f59e0b";
+        dot.style.boxShadow = "0 0 8px #f59e0b";
+      }
+    }, 2000);
   </script>
 </body>
 </html>
